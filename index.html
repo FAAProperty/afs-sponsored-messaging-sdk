@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Sponsored Messaging Demo</title>
+  <style>
+    body {
+      font-family: sans-serif;
+    }
+
+    #app-container {
+      max-width: 600px; /* Or your desired max width */
+      margin: 20px auto; /* Center the container */
+      padding: 20px;
+      border: 1px solid #eee;
+      border-radius: 8px;
+    }
+
+    #input-container {
+      display: flex; /* Arrange input and button side-by-side */
+      margin-bottom: 10px; /* Add space below input */
+    }
+
+    #userInput {
+      flex-grow: 1; /* Allow input to grow and fill space */
+      padding: 10px;
+      margin-right: 5px; /* Add space between input and button */
+      font-size: 16px;
+      border: 1px solid #ccc;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    #chatArea {
+      height: 300px;
+      overflow-y: scroll;
+      border: 1px solid #ccc;
+      padding: 10px;
+      margin-top: 10px;
+      background-color: #ffffff;
+    }
+
+    .message {
+      margin-bottom: 5px;
+      padding: 5px 10px;
+      border-radius: 15px;
+    }
+    .user-message {
+      background-color: #dcf8c6;
+      text-align: right;
+      margin-left: 40%;
+    }
+    .ai-message {
+      background-color: #eee;
+      text-align: left;
+      margin-right: 40%;
+    }
+
+    #chatPlaceholder {
+      text-align: center;
+      color: #999;
+      margin-top: 20px; /* Add some top margin */
+    }
+
+  </style>
+</head>
+<body>
+
+  <div id="app-container">
+    <h1>Sponsored AI Chat Demo</h1>
+
+    <div id="input-container"> 
+      <input id="userInput" type="text" placeholder="Ask me something..." />
+      <button id="sendButton">Send</button>
+    </div>
+
+    <!-- Wrapper for chat area to facilitate DOM replacement -->
+    <div id="chat-wrapper">
+      <div id="chatArea">
+        <div id="chatPlaceholder">Start chatting...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Load the SDK from Blob Storage -->
+  <script src="https://afsdevuksst.blob.core.windows.net/scripts/SponsoredMessaging.js"></script>
+
+  <!-- Load your app logic AFTER the SDK -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const chatArea = document.getElementById('chatArea');
+        const userInput = document.getElementById('userInput');
+        const sendButton = document.getElementById('sendButton');
+        const USER_SESSION_ID = crypto.randomUUID(); // Generate unique session ID
+
+        // --- SDK Initialization ---
+        let sponsoredSDK;
+        try {
+            sponsoredSDK = new SponsoredMessaging({
+                apiBaseUrl: 'https://afs-chat-ads-service-dev-uks-app-hqgwh3cjata8bfgp.uksouth-01.azurewebsites.net', // Replace with your actual API base URL
+                sourceAppId: 'demo-chat-app-001', // Replace with your actual source app ID
+                chatContainerId: 'chatArea', // The ID of the element containing chat messages
+                sponsorshipMode: 'chat' // 'message' or 'chat'
+            });
+        } catch (error) {
+            console.error("Failed to initialize SponsoredMessaging SDK:", error);
+            alert("Error initializing SDK. Sponsorship features may not work.");
+            // Optionally disable chat features or show a persistent error
+            if (sendButton) sendButton.disabled = true;
+            if (userInput) userInput.disabled = true;
+            return; // Stop further execution if SDK fails
+        }
+
+        // --- Event Listeners ---
+        if (sendButton) {
+            sendButton.addEventListener('click', sendMessage);
+        }
+
+        if (userInput) {
+            userInput.addEventListener('keypress', (event) => {
+                if (event.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+        }
+
+        // --- Core Functions ---
+        async function sendMessage() {
+            if (!sponsoredSDK) {
+                console.error("SDK not initialized, cannot send message.");
+                return;
+            }
+            const userMessage = userInput.value.trim();
+            if (!userMessage) return; // Don't send empty messages
+
+            addUserMessageToChat(userMessage);
+            userInput.value = ''; // Clear input after sending
+
+            // Simulate generating or fetching an AI response
+            // In a real app, this would likely involve an API call
+            const aiResponse = `This is a simulated AI response about '${userMessage}'.`;
+
+            try {
+                // Check for sponsorship using the SDK
+                const sponsorshipResult = await sponsoredSDK.checkSponsorship({
+                    userMessage: userMessage,
+                    aiResponse: aiResponse,
+                    userSessionId: USER_SESSION_ID,
+                    // sourceAppId is handled by SDK config
+                });
+
+                console.log('Sponsorship Check Result:', sponsorshipResult);
+
+                // Display based on SDK mode and result
+                if (sponsoredSDK.config.sponsorshipMode === 'message') {
+                    if (sponsorshipResult && sponsorshipResult.isSponsored) {
+                        // SDK's displaySponsoredMessage handles adding the message
+                        // It internally calls addSponsoredMessageToChat
+                        // We might not need to do anything extra here unless we want
+                        // to display the raw AI response separately *before* the ad.
+                        // Let's assume the SDK handles the combined display.
+                    } else if (sponsorshipResult && sponsorshipResult.rawContent) {
+                        // If not sponsored, display the raw AI content
+                        addAiMessageToChat(sponsorshipResult.rawContent);
+                    } else {
+                        // Fallback if rawContent is missing
+                        addAiMessageToChat(aiResponse);
+                    }
+                } else if (sponsoredSDK.config.sponsorshipMode === 'chat') {
+                    // In 'chat' mode, we always display the AI response.
+                    // The SDK handles wrapping the chat container if sponsored.
+                    addAiMessageToChat(sponsorshipResult?.rawContent || aiResponse);
+                } else {
+                  // If neither mode, default to showing AI response
+                   addAiMessageToChat(sponsorshipResult?.rawContent || aiResponse);
+                }
+
+            } catch (error) {
+                console.error("Error during sponsorship check or message display:", error);
+                // Display a generic AI response even if sponsorship check fails
+                addAiMessageToChat(aiResponse);
+                // Optionally add an error message to the chat
+                addErrorMessageToChat("Could not check for sponsorship info.");
+            }
+            chatArea.scrollTop = chatArea.scrollHeight; // Scroll to bottom
+        }
+
+        // Adds a user message bubble to the chat
+        function addUserMessageToChat(message) {
+            if (!chatArea) return;
+            // Remove placeholder if it exists
+            const placeholder = document.getElementById('chatPlaceholder');
+            if (placeholder) {
+                placeholder.remove();
+            }
+
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message', 'user-message');
+            messageDiv.textContent = `You: ${message}`;
+            chatArea.appendChild(messageDiv);
+        }
+
+        // Adds a standard AI message bubble to the chat
+        function addAiMessageToChat(message) {
+            if (!chatArea) return;
+            // Remove placeholder if it exists
+            const placeholder = document.getElementById('chatPlaceholder');
+            if (placeholder) {
+                placeholder.remove();
+            }
+
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message', 'ai-message');
+            messageDiv.textContent = `AI: ${message}`;
+            chatArea.appendChild(messageDiv);
+        }
+
+         // Adds a sponsored message block (called by SDK)
+        function addSponsoredMessageToChat(sponsoredData) {
+            console.log("addSponsoredMessageToChat called with:", sponsoredData);
+            if (!chatArea || !sponsoredData) return;
+             // Remove placeholder if it exists
+            const placeholder = document.getElementById('chatPlaceholder');
+            if (placeholder) {
+                placeholder.remove();
+            }
+            
+            chatArea.appendChild(sponsoredData.element);
+        }
+
+        // Adds an error message bubble to the chat
+        function addErrorMessageToChat(message) {
+            if (!chatArea) return;
+             // Remove placeholder if it exists
+             const placeholder = document.getElementById('chatPlaceholder');
+             if (placeholder) {
+                 placeholder.remove();
+             }
+
+            const errorDiv = document.createElement('div');
+            errorDiv.classList.add('message', 'error-message');
+            errorDiv.textContent = `Error: ${message}`;
+            errorDiv.style.color = 'red';
+            errorDiv.style.fontStyle = 'italic';
+            chatArea.appendChild(errorDiv);
+        }
+
+        // Expose functions needed by the SDK (if configured)
+        window.sponsoredMessagingCallbacks = {
+            addSponsoredMessageToChat,
+            addAiMessageToChat,
+            addUserMessageToChat
+        };
+    });
+  </script>
+
+</body>
+</html>
